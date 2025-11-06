@@ -65,5 +65,7 @@ The match continues until all characters on one team are eliminated.
 
 ---
 
-## 🖥️ Architecture Overview
+## How To Run
+Run the server -> python server.py
+Run the clients -> client_gui.py (run this in new terminal for each player)
 
