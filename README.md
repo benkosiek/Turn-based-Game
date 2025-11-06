@@ -1,48 +1,69 @@
-# Turn-Based Battle Game
+## ⚔️ Turn-Based Battle Game (Online Edition)
 
-A Python-based turn-based team battle game where players choose unique character classes and battle in teams using attacks, defenses, and special abilities. Supports 1v1, 2v2, and 3v3 game modes.
+A Python-based **team battle simulator** where players choose unique character classes and fight in strategic turn-based combat — now supporting **networked 1v1 battles** over sockets, with a **Tkinter GUI** interface.  
+The underlying engine supports **1v1, 2v2, and 3v3** modes, status effects, and cooldown-based special abilities.
 
-## Game Overview
+---
 
-Players take turns selecting actions like attacking, defending, or using a special move. Each character has unique stats and a special ability. The game continues until all characters on one team are eliminated.
+## 🎮 Game Overview
 
-## Features
+Players take turns choosing actions such as **Attack**, **Defend**, or a **Special Move**.  
+Each character class has distinct attributes and a unique special ability that may target a single enemy, an ally, or all opponents.  
 
-- Team-based battles (1v1, 2v2, or 3v3)
-- 6 unique character classes with different abilities
-- Cooldown management for special moves
-- Status effects like stun, poison, and defense boosts
-- Turn order and speed-based dodge mechanics
+The match continues until all characters on one team are eliminated.
 
-## Characters
+---
 
-| Character     | Description                                                                 |
-|---------------|-----------------------------------------------------------------------------|
-| Gladiator     | Strong melee fighter with Titan Smash for heavy damage                     |
-| Voidcaster    | Magic user with AoE (Arcane Blast) that damages all opponents              |
-| Stormstriker  | Ranged attacker with Piercing Arrow that ignores defense and may stun      |
-| Nightstalker  | Stealthy assassin with Silent Kill and poison damage                       |
-| Stoneguard    | Tank with Iron Fortress that boosts defense over time                      |
-| Soulmender    | Healer that restores HP to allies with Healing Light                       |
+## 🧩 Key Features
 
-## Actions
+- **Online multiplayer (1v1)** using Python sockets  
+- **Tkinter GUI** client for interactive battles  
+- **Team-based logic engine** supporting 1v1, 2v2, and 3v3 game modes  
+- **6 unique character classes**, each with a signature special move  
+- **Status effects**: stun, poison, and defense boost  
+- **Cooldown system** for special abilities  
+- **Speed-based turn order** and dodge mechanics  
+- **Modular design** – core combat logic separated from GUI and networking  
 
-- **Attack**: Basic attack targeting one enemy.
-- **Defend**: Doubles defense for the current turn.
-- **Special Move**: Unique to each character; may target self, ally, or all enemies depending on class.
+---
 
-## File Structure
+## 🧙‍♂️ Character Classes
 
-- `battle_manager.py`: Main game loop, team setup, action execution
-- `character.py`: Character classes and factory for creating them
-- `actions.py`: Defines attack, defend, and special move actions
-- `status_effects.py`: Defines status effects like poison, stun, and defense boost
+| Character     | Role / Description                                                                 |
+|---------------|------------------------------------------------------------------------------------|
+| **Gladiator** | A melee powerhouse with **Titan Smash**, dealing massive single-target damage.     |
+| **Voidcaster**| A mage who uses **Arcane Blast**, an AoE attack that hits all enemies.             |
+| **Stormstriker**| A ranged archer with **Piercing Arrow**, ignoring defense and possibly stunning. |
+| **Nightstalker**| A stealthy assassin using **Silent Kill** to inflict poison and heavy damage.   |
+| **Stoneguard** | A defensive tank who uses **Iron Fortress** to steadily raise defense.            |
+| **Soulmender** | A healer who casts **Healing Light** to restore HP to allies.                     |
 
-## ▶️ How to Run
+---
 
-1. Make sure you have Python 3 installed.
-2. Place all `.py` files in the same directory.
-3. Run the game:
+## 🪄 Actions
 
-```bash
-python battle_manager.py
+| Action | Description |
+|--------|--------------|
+| **Attack** | Basic single-target strike. |
+| **Defend** | Doubles defense for one turn. |
+| **Special Move** | Unique class-specific ability. May target self, ally, or all enemies. |
+
+---
+
+## 🧱 File Structure
+
+| File | Purpose |
+|------|----------|
+| `battle_manager_1.py` | Core turn logic and battle flow |
+| `character_1.py` | Character definitions and factory |
+| `actions_1.py` | Attack, Defend, and Special Move implementations |
+| `status_effects_1.py` | Defines and applies effects (Stun, Poison, DefenseBoost) |
+| `protocol.py` | JSON-based socket protocol (safe send/receive) |
+| `server.py` | Central game server that manages turns and state |
+| `client_gui.py` | Tkinter client GUI for players |
+| `Tests.py` | Unit tests for combat mechanics |
+
+---
+
+## 🖥️ Architecture Overview
+
