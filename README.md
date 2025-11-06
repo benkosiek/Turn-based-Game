@@ -70,7 +70,10 @@ The match continues until all characters on one team are eliminated.
 **Run the Server**  
 ```bash
 python server.py
+```
+
 **Run the Clients**  
 ```bash
 python client_gui.py (run this in different terminals if there are multiple players)
+```
 
