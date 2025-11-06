@@ -1,4 +1,4 @@
-## ⚔️ Turn-Based Battle Game (Online Edition)
+## ⚔️ Turn-Based Battle Game
 
 A Python-based **team battle simulator** where players choose unique character classes and fight in strategic turn-based combat — now supporting **networked 1v1 battles** over sockets, with a **Tkinter GUI** interface.  
 The underlying engine supports **1v1, 2v2, and 3v3** modes, status effects, and cooldown-based special abilities.
