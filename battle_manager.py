@@ -2,142 +2,188 @@ import random
 from character import CharacterFactory
 from actions import AttackAction, DefendAction, SpecialMoveAction
 
-# Purpose: Creates and handles the game logic and performance
-class BattleManager:
-    def __init__(self):
-        self.players = [] # list of players
-        self.teams = {"Team 1": [], "Team 2": []} # List of characters on each team
-        self.turn_order = [] # list of turn order
-        self.actions = {"1": AttackAction(), "2": DefendAction(), "3": SpecialMoveAction()} # Actions characters can perform
 
-     # Purpose: Menu with player choices
+class BattleManager:
+    """Manages game setup, turn order, and the main battle loop (local multiplayer)."""
+
+    def __init__(self):
+        self.players = []
+        self.teams = {"Team 1": [], "Team 2": []}
+        self.turn_order = []
+        self.actions = {
+            "1": AttackAction(),
+            "2": DefendAction(),
+            "3": SpecialMoveAction(),
+        }
+
+    # ------------------------------------------------------------------
+    # Setup
+    # ------------------------------------------------------------------
+
     def setup_game(self):
-        while True: # while number is 1,2 or 3
-            print("\nChoose battle mode: ") # choose amount of players vs players
+        """Prompt players to choose battle mode and characters."""
+        while True:
+            print("\nChoose battle mode:")
             print("1. 1v1")
             print("2. 2v2")
             print("3. 3v3")
             mode_choice = input("Enter your choice (1-3): ")
 
             if mode_choice in ["1", "2", "3"]:
-                team_size = int(mode_choice) # creates team size based on number chosen
-                break # breaks if number is no 1 2 or 3
+                team_size = int(mode_choice)
+                break
             print("Invalid choice. Please enter 1, 2, or 3.")
-        # number of teams is muliplied by 2 to get amount of players
-        total_players = team_size * 2
-        available_classes = ["Gladiator", "Voidcaster", "Stormstriker", "Nightstalker", "Stoneguard", "Soulmender"] # lists availibale characters
 
+        total_players = team_size * 2
+        available_classes = [
+            "Gladiator", "Voidcaster", "Stormstriker",
+            "Nightstalker", "Stoneguard", "Soulmender",
+        ]
 
         for i in range(total_players):
-            team_name = "Team 1" if i % 2 == 0 else "Team 2" # if even set to team 1 if odd set to team 2
-            print(f"\n{team_name}, Player {len(self.teams[team_name]) + 1}, choose a character:") # determines the player's number in their team
-            for idx, char_name in enumerate(available_classes): # generates an index (idx) and character name
-                print(f"{idx+1}. {char_name}") # ensures list starts from 1 and not 0
+            team_name = "Team 1" if i % 2 == 0 else "Team 2"
+            player_num = len(self.teams[team_name]) + 1
+            print(f"\n{team_name}, Player {player_num}, choose a character:")
+
+            for idx, char_name in enumerate(available_classes):
+                print(f"{idx + 1}. {char_name}")
 
             while True:
                 choice = input("Enter the number of your character: ")
-                if choice.isdigit() and 1 <= int(choice) <= len(available_classes): # ensures input is number and charcater has not been chosen
-                    selected_character = available_classes.pop(int(choice)-1) # pops haracter chosen and mkaes list of characters -1
-                    character = CharacterFactory.create_character(selected_character) # uses factory pattern to instantiate the selected character.
-                    self.teams[team_name].append(character) # assis=gns character to the team
-                    self.players.append(character) # ads character to gobal list of players
+                if choice.isdigit() and 1 <= int(choice) <= len(available_classes):
+                    selected_name = available_classes.pop(int(choice) - 1)
+                    character = CharacterFactory.create_character(selected_name)
+                    self.teams[team_name].append(character)
+                    self.players.append(character)
                     break
                 print("Invalid choice. Try again.")
 
-        self.turn_order = self.players[:] #Creates a copy of self.players for the turn order
-        random.shuffle(self.turn_order) #Randomizes the order of player turns
+        self.turn_order = self.players[:]
+        random.shuffle(self.turn_order)
 
-    # Purpose: Main game loop
+    # ------------------------------------------------------------------
+    # Main game loop
+    # ------------------------------------------------------------------
+
     def play_game(self):
-        while self.check_team_alive("Team 1") and self.check_team_alive("Team 2"): # ensures there is atleast a character alive in both teams
+        """Run turns until one team is fully eliminated."""
+        while self.check_team_alive("Team 1") and self.check_team_alive("Team 2"):
             for player in self.turn_order:
-                if player.hp <= 0: # if players hp is below zero, skip them
+                if player.hp <= 0:
                     continue
 
-                player.process_status_effects() # applies the ongoing status effect
-                self.decrement_cooldowns() #decrement the cooldown for special move
+                # Start-of-turn: reset defend bonus, apply status effects, tick cooldown
+                player.start_turn()
+                player.process_status_effects()
+                player.special_move_cooldown = max(0, player.special_move_cooldown - 1)
 
                 if player.is_stunned():
-                    print(f"{player.name} is stunned and skips their turn!")
-                    continue   # if player is stunned skip them
+                    print(f"\n{player.name} is stunned and skips their turn!")
+                    continue
 
                 print(f"\n{player.name}'s turn!")
-                print("1. Attack  2. Defend  3. Special Move")
-                choice = input("Choose an action: ") # prompts player to choose to attack, defend, or use special move
+                enemy_team_name = "Team 1" if player in self.teams["Team 2"] else "Team 2"
+                target_team = self.teams[enemy_team_name]
 
-                # determines which team player should attack
-                enemy_team = "Team 1" if player in self.teams["Team 2"] else "Team 2"
-                target_team = self.teams[enemy_team]
+                # Prompt for action (with validation)
+                choice = self._get_action_choice(player)
 
-                if choice == "2": # player chose defend
-                    self.actions[choice].execute(player) # double defense for that turn
-                elif choice == "3": # special move has been chosen
-                    if player.target_type == "enemy": # if target is the enemy
-                        if player.is_aoe: # checks if player is in area of effect
-                            player.special_move(target_team) # special move is executed on the entire enemy team
-                        else:
-                            target = self.choose_target(player) # target is set to the player the attacker chose
-                            player.special_move(target) # speical mvoe is executed on target
-                    elif player.target_type == "ally": # if target is ally
-                        target = self.choose_ally(player) # choose which character you want to perform speical move
-                        player.special_move(target) # speical move is done on target
-                    elif player.target_type == "self": # target is the current player
-                        player.special_move(player) # perform special on themselves
-                else: # player selects target
+                if choice == "2":
+                    self.actions[choice].execute(player)
+                elif choice == "3":
+                    self._handle_special_move(player, target_team)
+                else:  # Attack
                     target = self.choose_target(player)
-                    self.actions[choice].execute(player, target) # choose what action
+                    self.actions["1"].execute(player, target)
 
                 self.display_status()
                 input("Press Enter to continue...")
-        # checks if Team 1 has players alive, if not team 2 is chosen
+
+                if not (self.check_team_alive("Team 1") and self.check_team_alive("Team 2")):
+                    break
+
         winning_team = "Team 1" if self.check_team_alive("Team 1") else "Team 2"
         print(f"\n{winning_team} wins the battle!")
-    #Purpose: checks if players on team are alive
-    def check_team_alive(self, team_name):
-        return any(player.hp > 0 for player in self.teams[team_name]) # checks if any player in team has hp over 0
 
-    #Purpose: Choose the target
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    def _get_action_choice(self, player):
+        """Prompt for a valid action choice."""
+        while True:
+            print("1. Attack  2. Defend  3. Special Move")
+            choice = input("Choose an action: ")
+            if choice in ["1", "2", "3"]:
+                if choice == "3" and player.special_move_cooldown > 0:
+                    print(f"Special move is on cooldown for {player.special_move_cooldown} more turn(s). Choose another action.")
+                    continue
+                return choice
+            print("Invalid choice. Enter 1, 2, or 3.")
+
+    def _handle_special_move(self, player, target_team):
+        """Route the special move to the correct target(s)."""
+        if player.target_type == "enemy":
+            if player.is_aoe:
+                player.special_move(target_team)
+            else:
+                target = self.choose_target(player)
+                player.special_move(target)
+        elif player.target_type == "ally":
+            target = self.choose_ally(player)
+            player.special_move(target)
+        elif player.target_type == "self":
+            player.special_move(player)
+
+    def check_team_alive(self, team_name):
+        """Return True if at least one player on the team is alive."""
+        return any(p.hp > 0 for p in self.teams[team_name])
+
     def choose_target(self, player):
+        """Let the player pick a living enemy target."""
         enemy_team = "Team 1" if player in self.teams["Team 2"] else "Team 2"
-        available_targets = [p for p in self.teams[enemy_team] if p.hp > 0] # first determines whether the player belongs to Team 1 or Team 2, then selects the available allies from the appropriate team
+        available = [p for p in self.teams[enemy_team] if p.hp > 0]
 
         print("Choose a target:")
-        for idx, target in enumerate(available_targets):
-            print(f"{idx+1}. {target.name} (HP: {target.hp})")
+        for idx, target in enumerate(available):
+            print(f"{idx + 1}. {target.name} (HP: {target.hp})")
 
         while True:
             choice = input("Enter target number: ")
-            if choice.isdigit() and 1 <= int(choice) <= len(available_targets):
-                return available_targets[int(choice)-1]
+            if choice.isdigit() and 1 <= int(choice) <= len(available):
+                return available[int(choice) - 1]
             print("Invalid choice. Try again.")
 
     def choose_ally(self, player):
-        available_allies = [p for p in self.teams["Team 1"] if p.hp > 0] if player in self.teams["Team 1"] else [p for p in self.teams["Team 2"] if p.hp > 0]
+        """Let the player pick a living ally target."""
+        team_name = "Team 1" if player in self.teams["Team 1"] else "Team 2"
+        available = [p for p in self.teams[team_name] if p.hp > 0]
 
         print("Choose an ally:")
-        for idx, ally in enumerate(available_allies): # displays the characters names and hp of availble allies
-            print(f"{idx+1}. {ally.name} (HP: {ally.hp})")
+        for idx, ally in enumerate(available):
+            print(f"{idx + 1}. {ally.name} (HP: {ally.hp})")
 
         while True:
-            choice = input("Enter ally number: ") # choose an ally charcater
-            if choice.isdigit() and 1 <= int(choice) <= len(available_allies): # if input is a number and the charcater is availble and an ally
-                return available_allies[int(choice) - 1] # return the list decremented by 1
+            choice = input("Enter ally number: ")
+            if choice.isdigit() and 1 <= int(choice) <= len(available):
+                return available[int(choice) - 1]
             print("Invalid choice. Try again.")
 
-    # Purpose: Display the status of Battle
     def display_status(self):
-        print("\nCurrent Battle Status:")
-        for team_name, players in self.teams.items(): # Loops over each teams players and siplayes hp
+        """Print HP and cooldown status for all players."""
+        print("\n--- Battle Status ---")
+        for team_name, players in self.teams.items():
             print(f"\n{team_name}:")
-            for player in players:
-                print(f"{player.name}: {player.hp} HP")
-        # Prints the cooldown status of each player and how many turn left for it to be availble
-        for player in self.players:
-            print(f"{player.special_move_cooldown} turns until {player.name}'s special move is off cooldown.")
-    # Purpose: Decrements players specila move cooldowns
-    def decrement_cooldowns(self):
-        for player in self.players:
-            player.special_move_cooldown = max(0, player.special_move_cooldown - 1) # loops through players reducing cooldown by 1 ensuring it doesnt go below 0
+            for p in players:
+                status = "ELIMINATED" if p.hp <= 0 else f"{p.hp} HP"
+                effects = ", ".join(type(e).__name__ for e in p.status_effects) or "None"
+                print(f"  {p.name}: {status} | DEF: {p.defense} | Effects: {effects}")
+
+        print()
+        for p in self.players:
+            if p.hp > 0 and p.special_move_cooldown > 0:
+                print(f"  {p.name}'s special move: {p.special_move_cooldown} turn(s) until ready.")
+
 
 if __name__ == "__main__":
     game = BattleManager()
