@@ -1,6 +1,3 @@
-# `client_gui.py`
-
-
 import socket
 import threading
 import json
@@ -11,7 +8,10 @@ from tkinter import ttk, messagebox
 SERVER_HOST = "127.0.0.1"
 SERVER_PORT = 50007
 
+
 class NetClient:
+    """Handles the TCP connection to the game server."""
+
     def __init__(self, host, port, incoming_q):
         self.host = host
         self.port = port
@@ -57,7 +57,10 @@ class NetClient:
         except Exception:
             pass
 
+
 class BattleApp(tk.Tk):
+    """Tkinter GUI client for the turn-based battle game."""
+
     def __init__(self):
         super().__init__()
         self.title("Battle Game - Tkinter Client")
@@ -73,10 +76,8 @@ class BattleApp(tk.Tk):
         self.targets_ally = []
         self.is_my_turn = False
 
-        # Layout
         self._build_widgets()
 
-        # Connect
         try:
             self.client.connect()
         except Exception as e:
@@ -84,12 +85,11 @@ class BattleApp(tk.Tk):
             self.destroy()
             return
 
-        # Start polling
         self.after(50, self._poll_messages)
 
-    # ----------------------
+    # ----------------------------------------------------------------
     # UI construction
-    # ----------------------
+    # ----------------------------------------------------------------
     def _build_widgets(self):
         self.columnconfigure(0, weight=1)
         self.rowconfigure(1, weight=1)
@@ -132,7 +132,10 @@ class BattleApp(tk.Tk):
 
         ttk.Label(actions, text="Action:").grid(row=0, column=0, padx=4)
         self.action_var = tk.StringVar(value="attack")
-        self.action_cb = ttk.Combobox(actions, textvariable=self.action_var, values=["attack","defend","special"], state="readonly")
+        self.action_cb = ttk.Combobox(
+            actions, textvariable=self.action_var,
+            values=["attack", "defend", "special"], state="readonly"
+        )
         self.action_cb.grid(row=0, column=1, padx=4)
         self.action_cb.bind("<<ComboboxSelected>>", lambda e: self._refresh_target_visibility())
 
@@ -149,14 +152,14 @@ class BattleApp(tk.Tk):
         self.submit_btn = ttk.Button(actions, text="Submit", command=self._submit_action, state="disabled")
         self.submit_btn.grid(row=0, column=6, padx=4, sticky="e")
 
-        # Character selection frame (overlays early on)
+        # Character selection overlay
         self.char_frame = ttk.LabelFrame(self, text="Choose Your Character")
         self.char_frame.place(relx=0.5, rely=0.5, anchor="center")
         self.char_buttons = []
 
-    # ----------------------
+    # ----------------------------------------------------------------
     # Event handling
-    # ----------------------
+    # ----------------------------------------------------------------
     def _poll_messages(self):
         while True:
             try:
@@ -168,31 +171,32 @@ class BattleApp(tk.Tk):
 
     def _handle_message(self, msg: dict):
         mtype = msg.get("type")
+
         if mtype == "welcome":
             self.player_id = msg.get("player_id")
             self.status_lbl.config(text=f"Connected. You are Player {self.player_id}")
+
         elif mtype == "choose_character":
             self.available_classes = msg.get("available", [])
             self._show_character_choices()
+
         elif mtype == "waiting":
             self._append_log(msg.get("message", "Waiting..."))
+
         elif mtype == "game_state":
-            # Hide the selector when the server starts broadcasting match state
             if self.char_frame.winfo_ismapped():
                 self.char_frame.place_forget()
             self._render_state(msg.get("state", {}))
+
         elif mtype == "your_turn":
             self.is_my_turn = True
             cd = msg.get("cooldown", 0)
 
-            # Determine available actions based on cooldown
             acts = ["attack", "defend"] if cd > 0 else ["attack", "defend", "special"]
-
             t = msg.get("targets", {})
             self.targets_enemy = t.get("enemy", [])
             self.targets_ally = t.get("ally", [])
 
-            # Update dropdowns
             self.action_cb["values"] = acts
             if cd > 0 and self.action_var.get() == "special":
                 self.action_var.set("attack")
@@ -200,42 +204,36 @@ class BattleApp(tk.Tk):
             self.target_ally_cb["values"] = self.targets_ally
             self._refresh_target_visibility()
 
-            # Enable submit
             self.submit_btn.config(state="normal")
 
-            # Log and status label
             actor = msg.get("actor", "Your")
             self._append_log(f"It's your turn: {actor}")
             if cd > 0:
-                self._append_log(f"Your special move is on cooldown for {cd} more turn(s).")
+                self._append_log(f"Special move on cooldown for {cd} more turn(s).")
             self.status_lbl.config(text="Your turn!")
 
         elif mtype == "action_result":
             self._append_log(msg.get("log", ""))
+
         elif mtype == "game_over":
             winner = msg.get("winner")
             self._append_log(f"Game Over! Winner: {winner}")
             self.submit_btn.config(state="disabled")
             messagebox.showinfo("Game Over", f"Winner: {winner}")
+
         elif mtype == "error":
             self._append_log("Error: " + msg.get("message", ""))
-            # If character was taken, let the user pick again
             if not self.char_frame.winfo_ismapped():
                 self.char_frame.place(relx=0.5, rely=0.5, anchor="center")
-        else:
-            # ignore unknown
-            pass
 
     def _show_character_choices(self):
-        # Clear previous
         for btn in self.char_buttons:
             btn.destroy()
         self.char_buttons = []
 
-        # Build buttons
         for i, name in enumerate(self.available_classes):
             b = ttk.Button(self.char_frame, text=name, command=lambda n=name: self._pick_character(n))
-            b.grid(row=i//3, column=i%3, padx=6, pady=6)
+            b.grid(row=i // 3, column=i % 3, padx=6, pady=6)
             self.char_buttons.append(b)
 
     def _pick_character(self, name):
@@ -248,7 +246,6 @@ class BattleApp(tk.Tk):
 
     def _render_state(self, state: dict):
         teams = state.get("teams", {})
-        # Left: Team 1, Right: Team 2
         self._set_text(self.team1_box, self._format_team(teams.get("Team 1", []), title="Team 1"))
         self._set_text(self.team2_box, self._format_team(teams.get("Team 2", []), title="Team 2"))
 
@@ -258,7 +255,10 @@ class BattleApp(tk.Tk):
             if not m:
                 continue
             status = ", ".join(m.get("status", [])) or "None"
-            lines.append(f"{m['name']:12s} | HP: {m['hp']:>3} | DEF: {m['defense']:>2} | CD: {m['cooldown']} | Status: {status}")
+            lines.append(
+                f"{m['name']:12s} | HP: {m['hp']:>3} | DEF: {m['defense']:>2} "
+                f"| CD: {m['cooldown']} | Status: {status}"
+            )
         return "\n".join(lines)
 
     def _set_text(self, widget: tk.Text, txt: str):
@@ -275,7 +275,6 @@ class BattleApp(tk.Tk):
 
     def _refresh_target_visibility(self):
         act = self.action_var.get()
-        # enable/disable target boxes. We'll show both; server will validate which one matters.
         if act == "defend":
             self.target_enemy_cb.set("")
             self.target_ally_cb.set("")
@@ -290,7 +289,7 @@ class BattleApp(tk.Tk):
             return
         act = self.action_var.get()
         target_index = None
-        # Prefer enemy target if selected, else ally
+
         if self.target_enemy_var.get() in self.targets_enemy:
             target_index = self.targets_enemy.index(self.target_enemy_var.get())
         elif self.target_ally_var.get() in self.targets_ally:
@@ -300,7 +299,7 @@ class BattleApp(tk.Tk):
             self.client.send({
                 "type": "action",
                 "action": act,
-                "target_index": target_index
+                "target_index": target_index,
             })
         except Exception as e:
             messagebox.showerror("Network", str(e))
@@ -316,6 +315,7 @@ class BattleApp(tk.Tk):
         except Exception:
             pass
         super().destroy()
+
 
 if __name__ == "__main__":
     app = BattleApp()
