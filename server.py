@@ -6,39 +6,41 @@ import json
 import random
 from typing import List, Dict, Optional
 
-# Import your existing game logic modules
-from character_1 import CharacterFactory
-from actions_1 import AttackAction, DefendAction, SpecialMoveAction
-from status_effects_1 import StunEffect  # <- change to status_effect_1 if that's your filename
+from character import CharacterFactory
+from actions import AttackAction, DefendAction, SpecialMoveAction
+from status_effects import StunEffect
 
 # ----------------------------
-# Minimal network protocol
+# Protocol (JSON over newline-delimited TCP)
 # ----------------------------
 # Server -> Client:
 #   welcome          : { type, player_id }
 #   choose_character : { type, available }
 #   waiting          : { type, message }
 #   game_state       : { type, state }
-#   your_turn        : { type, actor, actions, targets }
+#   your_turn        : { type, actor, actions, targets, cooldown }
 #   action_result    : { type, log }
 #   game_over        : { type, winner }
 #   error            : { type, message }
 #
 # Client -> Server:
 #   pick_character   : { type, choice }
-#   action           : { type, action, target_index }  # action in {"attack","defend","special"}
+#   action           : { type, action, target_index }
 
 AVAILABLE_CLASSES = [
     "Gladiator", "Voidcaster", "Stormstriker", "Nightstalker", "Stoneguard", "Soulmender"
 ]
 
+
 class PlayerConn:
+    """Wraps a socket connection for a single player."""
+
     def __init__(self, conn: socket.socket, addr: tuple, pid: int):
         self.conn = conn
         self.addr = addr
         self.pid = pid
-        self.character = None  # set to Character instance
-        self.team = None       # "Team 1" or "Team 2"
+        self.character = None
+        self.team = None
         self.lock = threading.Lock()
 
     def send(self, obj: dict):
@@ -71,16 +73,16 @@ class PlayerConn:
         except Exception:
             pass
 
+
 # ----------------------------
 # Headless battle engine (1v1)
 # ----------------------------
 class NetworkBattle:
     def __init__(self, players: List[PlayerConn]):
-        # Two players, two teams
         self.players = players
         self.teams: Dict[str, List[PlayerConn]] = {
             "Team 1": [players[0]],
-            "Team 2": [players[1]]
+            "Team 2": [players[1]],
         }
         players[0].team = "Team 1"
         players[1].team = "Team 2"
@@ -93,9 +95,6 @@ class NetworkBattle:
             "defend": DefendAction(),
             "special": SpecialMoveAction(),
         }
-
-    def everyone(self):
-        return self.players
 
     # ---------- helpers ----------
     def alive_on_team(self, team_name: str):
@@ -117,7 +116,7 @@ class NetworkBattle:
                 "hp": c.hp,
                 "defense": c.defense,
                 "cooldown": c.special_move_cooldown,
-                "status": [f"{type(e).__name__}({e.duration})" for e in c.status_effects]
+                "status": [f"{type(e).__name__}({e.duration})" for e in c.status_effects],
             }
         return {
             "teams": {
@@ -128,56 +127,54 @@ class NetworkBattle:
 
     # ---------- battle loop ----------
     def run(self):
-        # Ask both players to choose characters
+        # Character selection
         avail = AVAILABLE_CLASSES.copy()
         for p in self.players:
             p.send({"type": "choose_character", "available": avail})
 
-        # collect choices (no duplicates)
         taken = set()
         for p in self.players:
             choice = self._wait_for_character_choice(p, avail, taken)
             taken.add(choice)
             p.character = CharacterFactory.create_character(choice)
 
-        # initial broadcast
         self._broadcast_state("Match start!")
 
-        # main turns
+        # Main turn loop
         while self.check_team_alive("Team 1") and self.check_team_alive("Team 2"):
             for p in list(self.turn_order):
                 c = p.character
                 if c.hp <= 0:
                     continue
 
-                # Start-of-turn upkeep for EVERYONE
-                # process status + decrement cooldown ONLY for the current actor
+                # Start-of-turn upkeep
+                c.start_turn()
                 c.process_status_effects()
                 c.special_move_cooldown = max(0, c.special_move_cooldown - 1)
 
-                # stun skip
-                if c.has_active_effect(StunEffect):
+                # Stun check
+                if c.is_stunned():
                     self._broadcast_state(f"{c.name} is stunned and skips the turn!")
                     continue
 
-                # build targets
+                # Build target lists
                 enemy_team_name = self.enemy_team_of(p)
                 targets = [pp for pp in self.teams[enemy_team_name] if pp.character.hp > 0]
                 ally_targets = [pp for pp in self.teams[p.team] if pp.character.hp > 0]
 
-                # prompt current player
+                # Prompt current player
                 p.send({
                     "type": "your_turn",
                     "actor": c.name,
-                    "cooldown": c.special_move_cooldown,  # add this
+                    "cooldown": c.special_move_cooldown,
                     "actions": ["attack", "defend", "special"],
                     "targets": {
-                            "enemy": [self._target_label(pp) for pp in targets],
-                            "ally": [self._target_label(pp) for pp in ally_targets],
+                        "enemy": [self._target_label(pp) for pp in targets],
+                        "ally": [self._target_label(pp) for pp in ally_targets],
                     },
                 })
 
-                # wait for action
+                # Wait for action
                 action_obj = self._wait_for_action(p)
                 if not action_obj:
                     self._broadcast_state("A player disconnected. Ending match.")
@@ -186,7 +183,6 @@ class NetworkBattle:
                 log = self._apply_action(p, action_obj, targets, ally_targets)
                 self._broadcast_state(log)
 
-                # check win after each action
                 if not (self.check_team_alive("Team 1") and self.check_team_alive("Team 2")):
                     break
 
@@ -235,15 +231,11 @@ class NetworkBattle:
         target_index = action_obj.get("target_index")
         c = p.character
 
-        def hp_line(before, after):
-            return f"(HP {before} → {after})"
-
         # DEFEND
         if act == "defend":
             before_def = c.defense
-            self.actions["defend"].execute(c)  # doubles defense per your implementation
-            gained = c.defense - before_def
-            return f"{c.name} defends, +{gained} DEF → {c.defense}."
+            c.set_defending()
+            return f"{c.name} defends! DEF {before_def} → {c.defense}."
 
         # ATTACK
         if act == "attack":
@@ -252,43 +244,34 @@ class NetworkBattle:
                 return f"{c.name} tried to attack, but no valid target."
 
             t = target.character
-            # dodge check (mirrors your AttackAction)
             dodge_chance = t.speed / 100.0
-            import random as _r
-            if _r.random() < dodge_chance:
+            if random.random() < dodge_chance:
                 return f"{c.name} attacks {t.name}, but {t.name} DODGES!"
 
             before = t.hp
             damage = max(0, c.attack_power - t.defense)
             t.hp -= damage
             after = t.hp
-            if t.hp <= 0:
-                return f"{c.name} attacks {t.name} for {before - after} damage {hp_line(before, after)}. {t.name} is eliminated!"
-            return f"{c.name} attacks {t.name} for {before - after} damage {hp_line(before, after)}."
+            elim = f" {t.name} is eliminated!" if t.hp <= 0 else ""
+            return f"{c.name} attacks {t.name} for {damage} damage (HP {before} → {after}).{elim}"
 
-        # SPECIAL (universal 3-turn cooldown)
+        # SPECIAL
         if act == "special":
-            # Block if on cooldown
             if c.special_move_cooldown > 0:
                 return f"{c.name}'s special is on cooldown for {c.special_move_cooldown} more turn(s)."
 
             # Enemy-target specials
             if getattr(c, "target_type", "enemy") == "enemy":
-                # AOE
                 if getattr(c, "is_aoe", False):
-                    living_chars = [pp.character for pp in enemy_targets if pp.character.hp > 0]
-                    if not living_chars:
+                    living = [pp.character for pp in enemy_targets if pp.character.hp > 0]
+                    if not living:
                         return f"{c.name} tried a team-wide special, but no valid targets."
-                    # snapshot HPs
-                    before_map = {ch.name: ch.hp for ch in living_chars}
-                    c.special_move(living_chars)
-                    # set universal cooldown
-                    c.special_move_cooldown = 4
-                    # build per-target deltas
+                    before_map = {ch.name: ch.hp for ch in living}
+                    c.special_move(living)
                     parts = []
-                    for ch in living_chars:
-                        taken = max(0, before_map[ch.name] - ch.hp)
-                        parts.append(f"{ch.name} -{taken} (HP {before_map[ch.name]} → {ch.hp})")
+                    for ch in living:
+                        taken_dmg = max(0, before_map[ch.name] - ch.hp)
+                        parts.append(f"{ch.name} -{taken_dmg} (HP {before_map[ch.name]} → {ch.hp})")
                     return f"{c.name} uses a team-wide special:\n  " + "\n  ".join(parts)
 
                 # Single-target enemy special
@@ -299,21 +282,15 @@ class NetworkBattle:
                 before = t.hp
                 before_status = {type(e).__name__ for e in t.status_effects}
                 c.special_move(t)
-                # set universal cooldown
-                c.special_move_cooldown = 3
                 after = t.hp
-                after_status = {type(e).__name__ for e in t.status_effects}
+                new_effects = {type(e).__name__ for e in t.status_effects} - before_status
+                status_note = f" [Applied: {', '.join(sorted(new_effects))}]" if new_effects else ""
                 delta = before - after
-                status_note = ""
-                new_effects = after_status - before_status
-                if new_effects:
-                    status_note = f" [Status applied: {', '.join(sorted(new_effects))}]"
                 if delta > 0:
                     return f"{c.name} uses special on {t.name} for {delta} damage (HP {before} → {after}).{status_note}"
-                else:
-                    return f"{c.name} uses special on {t.name}.{status_note} (HP {before} → {after})"
+                return f"{c.name} uses special on {t.name}.{status_note} (HP {before} → {after})"
 
-            # Ally-target specials (e.g., Soulmender)
+            # Ally-target special (e.g., Soulmender)
             elif c.target_type == "ally":
                 target = self._safe_pick(ally_targets, target_index)
                 if not target:
@@ -321,23 +298,18 @@ class NetworkBattle:
                 t = target.character
                 before = t.hp
                 c.special_move(t)
-                # set universal cooldown
-                c.special_move_cooldown = 3
                 after = t.hp
                 healed = max(0, after - before)
-                return f"{c.name} heals {t.name} for {healed} (HP {before} → {after})."
+                return f"{c.name} heals {t.name} for {healed} HP (HP {before} → {after})."
 
-            # Self specials (e.g., Stoneguard)
+            # Self-target special (e.g., Stoneguard)
             else:
                 before_def = c.defense
                 before_status = {type(e).__name__ for e in c.status_effects}
                 c.special_move(c)
-                # set universal cooldown
-                c.special_move_cooldown = 3
+                new_effects = {type(e).__name__ for e in c.status_effects} - before_status
+                status_note = f" [Applied: {', '.join(sorted(new_effects))}]" if new_effects else ""
                 gained = c.defense - before_def
-                after_status = {type(e).__name__ for e in c.status_effects}
-                new_effects = after_status - before_status
-                status_note = f" [Status applied: {', '.join(sorted(new_effects))}]" if new_effects else ""
                 if gained > 0:
                     return f"{c.name} uses a self-buff: +{gained} DEF → {c.defense}.{status_note}"
                 return f"{c.name} uses a self-buff.{status_note}"
@@ -350,6 +322,7 @@ class NetworkBattle:
         if 0 <= idx < len(arr):
             return arr[idx]
         return None
+
 
 # ----------------------------
 # Server bootstrap
@@ -378,7 +351,6 @@ class GameServer:
             if len(self.clients) < 2:
                 player.send({"type": "waiting", "message": "Waiting for another player to join..."})
 
-        # Launch the match
         try:
             battle = NetworkBattle(self.clients)
             battle.run()
@@ -393,6 +365,7 @@ class GameServer:
             for p in self.clients:
                 p.close()
             self.sock.close()
+
 
 if __name__ == "__main__":
     GameServer().start()
